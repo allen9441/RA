@@ -132,7 +132,11 @@ if selected_mode in ["3", "all"]:
         )
         diff_step = st.text_input(
             "Diff Step", "0.05",
-            help="導數計算的插值間隔。數值越大越平滑(抗雜訊)，數值越小越敏感。 | 預設值：0.05"
+            help="導數計算的插值間隔。數值越大越平滑(抗雜訊)，數值越小越敏感。 | 預設值：0.1"
+        )
+        flat_threshold = st.text_input(
+            "Flat Threshold", "0.0",
+            help="平緩閾值。若導數特徵小於此值，將被獨立分到 Cluster 0 (Flat)。設為 0.0 代表不啟用。 | 建議嘗試 0.001 ~ 0.01"
         )
         shift = st.text_input(
             "Shift", "0.0",
@@ -200,6 +204,7 @@ if st.button("開始執行"):
             cmd.extend(["--x-axis", x_axis])
             cmd.extend(["--derivative", derivative])
             cmd.extend(["--diff-step", diff_step])
+            cmd.extend(["--flat-threshold", flat_threshold])
             cmd.extend(["--shift", shift])
             cmd.extend(["--q-min", q_min])
             cmd.extend(["--q-max", q_max])

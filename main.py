@@ -57,6 +57,12 @@ def main():
         help='導數插值間隔 (預設=0.05)'
     )
     parser.add_argument(
+        '--flat-threshold',
+        type=float,
+        default=0.0,
+        help='平緩閾值：若導數特徵小於此值則歸類為 Cluster 0'
+    )
+    parser.add_argument(
         '--sort-peak',
         action='store_true',
         help='是否根據Q=0.5~0.7區間最大值排序每群'
@@ -202,6 +208,7 @@ def main():
             interactive=args.interactive,
             derivative_order=args.derivative,
             diff_step=args.diff_step,
+            flat_threshold=args.flat_threshold,
             sort_peak=args.sort_peak,
             shift_distance=args.shift,
             display_q_min=args.q_min,

@@ -19,7 +19,7 @@ class Mode3Plotter:
     """
     def __init__(self, target_dir, output_dir, interactive, interval=30, 
                 plot_mode='cluster',y_axis='log',x_axis='linear',derivative_order=2,
-                diff_step=0.1,
+                diff_step=0.05, flat_threshold=0.0,
                 sort_peak=False,shift_distance=0.0,display_q_min=0.0, display_q_max=2.0,
                 cluster_colors=None,save_label=False,peak_min=0.5, peak_max=0.6,
                 cluster_range=False,
@@ -31,9 +31,15 @@ class Mode3Plotter:
         self.plot_mode = plot_mode  # 'simple' or 'cluster'
         self.derivative_order = derivative_order
         self.diff_step = float(diff_step)
+        self.flat_threshold = float(flat_threshold)
         self.sort_peak = sort_peak
         self.shift_distance = shift_distance
-        self.num_clusters = 3
+        
+        if self.flat_threshold > 0:
+            self.num_clusters = 4
+        else:
+            self.num_clusters = 3
+            
         # 設定 Y 軸刻度
         self.y_axis = y_axis
         self.x_axis = x_axis
@@ -465,6 +471,11 @@ class Mode3Plotter:
             if len(xs)<3:
                 self.sec_metrics[col]=0; continue
             qg = np.arange(qs, qe+dq/2, dq)
+            
+            if len(qg) < 3:
+                self.sec_metrics[col] = 0
+                continue
+
             yg = np.interp(qg, xs, ys)
             deriv = np.gradient(yg, qg) if self.derivative_order==1 else np.gradient(np.gradient(yg,qg),qg)
             self.sec_metrics[col] = np.nanmax(np.abs(deriv))
@@ -477,14 +488,43 @@ class Mode3Plotter:
         vmin, vmax = min(vals), max(vals)
         print(f"Cluster Metrics (Range {qs:.3f}-{qe:.3f}): Min={vmin:.6f}, Max={vmax:.6f}")
 
-        if vmin == vmax:
-            # if all values identical, assigning to cluster 0
-            newc = {k: 0 for k in self.sec_metrics}
+        # Flat Threshold
+        if self.flat_threshold > 0:
+            flat_cols = [k for k, v in self.sec_metrics.items() if v < self.flat_threshold]
+            signal_cols = [k for k, v in self.sec_metrics.items() if v >= self.flat_threshold]
+            
+            newc = {}
+            # Assign Cluster 0 to Flat
+            for k in flat_cols:
+                newc[k] = 0
+            
+            # Assign Cluster 1, 2, 3 to Signal
+            if signal_cols:
+                sig_vals = [self.sec_metrics[k] for k in signal_cols]
+                sv_min, sv_max = min(sig_vals), max(sig_vals)
+                
+                if sv_min == sv_max:
+                    for k in signal_cols:
+                        newc[k] = 1
+                else:
+                    bins = np.linspace(sv_min, sv_max, 4) 
+                    bins[-1] += 1e-8
+                    for k in signal_cols:
+                        v = self.sec_metrics[k]
+                        # digitize returns 1, 2, 3
+                        idx = np.digitize(v, bins)
+                        # Clamp to 1~3 just in case
+                        idx = max(1, min(idx, 3))
+                        newc[k] = idx
         else:
-            bins = np.linspace(vmin, vmax, self.num_clusters+1)
-            bins[-1] += 1e-8
-            newc = {k:min(max(np.digitize(v,bins)-1,0),self.num_clusters-1) 
-                    for k,v in self.sec_metrics.items()}
+            if vmin == vmax:
+                # if all values identical, assigning to cluster 0
+                newc = {k: 0 for k in self.sec_metrics}
+            else:
+                bins = np.linspace(vmin, vmax, self.num_clusters+1)
+                bins[-1] += 1e-8
+                newc = {k:min(max(np.digitize(v,bins)-1,0),self.num_clusters-1) 
+                        for k,v in self.sec_metrics.items()}
             
         self.df_res['Cluster'] = self.df_res['Column'].map(newc)
         # 顯示統計
@@ -700,3 +740,33 @@ class Mode3Plotter:
                 pass
             self._draw_cluster(ax, int(self.tb_int.text))
         self.tb_qmax.on_submit(submit_qmax)
+
+        # Flat Threshold
+        ax_flat = plt.axes([0.65, 0.10, 0.05, 0.05])
+        self.tb_flat = TextBox(ax_flat, 'Flat Thr', initial=str(self.flat_threshold),label_pad=0.1)
+        def submit_flat(text):
+            try:
+                val = float(text)
+                self.flat_threshold = val
+                
+                if self.flat_threshold > 0:
+                    self.num_clusters = 4
+                else:
+                    self.num_clusters = 3
+                
+                self.shift_values = {i: i*0.4 for i in range(self.num_clusters)}
+                
+                if self.cluster_colors_arg:
+                    colors = [c.strip() for c in self.cluster_colors_arg.split(',')]
+                    while len(colors) < self.num_clusters:
+                        colors.append(colors[-1])
+                    self.cluster_colors = {i: colors[i] for i in range(self.num_clusters)}
+                else:
+                    cmap = get_cmap('rainbow')
+                    self.cluster_colors = {i: cmap(i/self.num_clusters) for i in range(self.num_clusters)}
+                
+                self._compute_and_cluster()
+                self._draw_cluster(ax, int(self.tb_int.text))
+            except ValueError:
+                pass
+        self.tb_flat.on_submit(submit_flat)
