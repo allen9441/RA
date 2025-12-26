@@ -18,7 +18,7 @@ class Mode3Plotter:
     交互式繪圖：提供 simple（簡易平移疊圖）和 cluster（導數分群疊圖）兩種模式。
     """
     def __init__(self, target_dir, output_dir, interactive, interval=10, 
-                plot_mode='cluster',y_axis='log',derivative_order=2,
+                plot_mode='cluster',y_axis='log',x_axis='linear',derivative_order=2,
                 sort_peak=False,shift_distance=0.0,display_q_min=0.0, display_q_max=2.0,
                 cluster_colors=None,save_label=False,peak_min=0.5, peak_max=0.6,
                 pick_qs=None,output_filename=None,pick_colors=None,baseq=None):
@@ -30,10 +30,10 @@ class Mode3Plotter:
         self.derivative_order = derivative_order
         self.sort_peak = sort_peak
         self.shift_distance = shift_distance
-        self.derivative_order = 2
         self.num_clusters = 3
         # 設定 Y 軸刻度
         self.y_axis = y_axis
+        self.x_axis = x_axis
         # 預設的 Q 顯示範圍
         self.display_q_min = display_q_min
         self.display_q_max = display_q_max
@@ -163,8 +163,9 @@ class Mode3Plotter:
             ax.plot(x, y, color=colors[idx], label=col)
         title_name = os.path.basename(os.path.normpath(self.target_dir))
         ax.set_yscale(self.y_axis)
+        ax.set_xscale(self.x_axis)
         ax.set_title(f"Simple Plot {title_name} (Interval={self.interval}, Shift={self.shift_distance})")
-        ax.set_xlabel("q"); ax.set_ylabel(f"Intensity {self.y_axis}")
+        ax.set_xlabel(f"q ({self.x_axis})"); ax.set_ylabel(f"Intensity {self.y_axis}")
         ax.grid(True); ax.legend(loc='upper right'); plt.draw()
         ax.set_xlim(left=self.display_q_min)
     def _setup_simple_ui(self, fig, ax):
@@ -616,7 +617,8 @@ class Mode3Plotter:
                 y_sub = y[display_mask]
                 shift = 10 ** (self.shift_values[c] + self.shift_distance * idx)
                 ax.plot(x_sub, y_sub * shift, color=self.cluster_colors[c], label=col)
-        ax.set_yscale(self.y_axis); ax.set_xlabel('q'); ax.set_ylabel(f'Intensity {self.y_axis}')
+        ax.set_yscale(self.y_axis); ax.set_xscale(self.x_axis)
+        ax.set_xlabel(f'q ({self.x_axis})'); ax.set_ylabel(f'Intensity {self.y_axis}')
         title_name = os.path.basename(os.path.normpath(self.target_dir))
         title = f"Cluster Plot {title_name} ({self.derivative_order}nd Deriv, Interval={interval})"
         if sid is not None: title += f" - Cluster {sid}"
