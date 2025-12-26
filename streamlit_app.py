@@ -121,6 +121,10 @@ if selected_mode in ["3", "all"]:
             "Y Axis", ["log", "linear"],
             help="Y 軸 (強度) 的顯示刻度。"
         )
+        x_axis = st.selectbox(
+            "X Axis", ["linear", "log"],
+            help="X 軸 (Q 值) 的顯示刻度。"
+        )
     with c2:
         derivative = st.selectbox(
             "Derivative Order", ["2", "1"],
@@ -185,6 +189,7 @@ if st.button("開始執行"):
         if selected_mode in ["3", "all"]:
             cmd.extend(["--plot-mode", plot_mode])
             cmd.extend(["--y-axis", y_axis])
+            cmd.extend(["--x-axis", x_axis])
             cmd.extend(["--derivative", derivative])
             cmd.extend(["--shift", shift])
             cmd.extend(["--q-min", q_min])

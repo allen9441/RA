@@ -22,6 +22,12 @@ def main():
         help='Y 軸刻度：linear=線性, log=對數 (預設)'
     )
     parser.add_argument(
+        '--x-axis',
+        choices=['linear', 'log'],
+        default='linear',
+        help='X 軸刻度：linear=線性 (預設), log=對數'
+    )
+    parser.add_argument(
         '--output-dir',
         default='output',
         help='輸出圖片資料夾名稱 (預設為 output)'
@@ -179,6 +185,7 @@ def main():
             interval=args.interval,
             plot_mode=args.plot_mode,
             y_axis=args.y_axis,
+            x_axis=args.x_axis,
             output_dir=args.output_dir,
             output_filename=args.output_name,
             interactive=args.interactive,
