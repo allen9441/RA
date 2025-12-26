@@ -277,5 +277,5 @@ python3 -m py_compile streamlit_app.py
 啟動WebUI：
 
 ``` bash
-streamlit run streamlit_app.py 
+python -m streamlit run streamlit_app.py 
 ```
