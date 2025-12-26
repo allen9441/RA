@@ -80,8 +80,8 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("一般設定")
     interval = st.text_input(
-        "Interval (間隔)", "10",
-        help="每隔幾個檔案畫一條線，避免圖表過於擁擠。 | 預設值：10"
+        "Interval (間隔)", "30",
+        help="每隔幾個檔案畫一條線，避免圖表過於擁擠。 | 預設值：30"
     )
     output_dir = st.text_input(
         "Output Dir (輸出目錄)", "output",
@@ -130,6 +130,10 @@ if selected_mode in ["3", "all"]:
             "Derivative Order", ["2", "1"],
             help="導數階數，僅用於 Cluster 模式的分群計算。 | 預設值：2 (二次導數)"
         )
+        diff_step = st.text_input(
+            "Diff Step", "0.05",
+            help="導數計算的插值間隔。數值越大越平滑(抗雜訊)，數值越小越敏感。 | 預設值：0.05"
+        )
         shift = st.text_input(
             "Shift", "0.0",
             help="每條曲線的垂直平移量 (在 log 刻度下代表倍率)。 | 預設值：0.0 (不平移)"
@@ -157,6 +161,10 @@ if selected_mode in ["3", "all"]:
         baseq = st.text_input(
             "Base Q (Optional)", "",
             help="指定扣除 Baseline 的 Q 值位置。 | 若留空，程式會自動偵測起漲點作為 Baseline。"
+        )
+        cluster_range = st.checkbox(
+            "Cluster within Peak Range", value=True,
+            help="若勾選，分群計算將僅針對 Peak Min ~ Peak Max 範圍內的導數特徵，而非整條譜線。建議Range / Step >= 5"
         )
     with c5:
         cluster_colors = st.text_input(
@@ -191,6 +199,7 @@ if st.button("開始執行"):
             cmd.extend(["--y-axis", y_axis])
             cmd.extend(["--x-axis", x_axis])
             cmd.extend(["--derivative", derivative])
+            cmd.extend(["--diff-step", diff_step])
             cmd.extend(["--shift", shift])
             cmd.extend(["--q-min", q_min])
             cmd.extend(["--q-max", q_max])
@@ -210,6 +219,8 @@ if st.button("開始執行"):
                 cmd.append("--sort-peak")
             if save_label:
                 cmd.append("--save-label")
+            if cluster_range:
+                cmd.append("--cluster-range")
 
         st.info(f"執行指令: {' '.join(cmd)}")
         

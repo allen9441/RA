@@ -51,6 +51,12 @@ def main():
         help='導數階數: 1=一次導數, 2=二次導數 (預設=2)'
     )
     parser.add_argument(
+        '--diff-step',
+        type=float,
+        default=0.05,
+        help='導數插值間隔 (預設=0.05)'
+    )
+    parser.add_argument(
         '--sort-peak',
         action='store_true',
         help='是否根據Q=0.5~0.7區間最大值排序每群'
@@ -89,6 +95,11 @@ def main():
         '--peak-max',
         default='0.6',
         help='選擇最大值的 Q 範圍 (預設=1.8, 例如 1.6,2.0)'
+    )
+    parser.add_argument(
+        '--cluster-range',
+        action='store_true',
+        help='是否將分群計算限制在 Peak Min ~ Peak Max 範圍內'
     )
     parser.add_argument(
         '--baseq',
@@ -190,6 +201,7 @@ def main():
             output_filename=args.output_name,
             interactive=args.interactive,
             derivative_order=args.derivative,
+            diff_step=args.diff_step,
             sort_peak=args.sort_peak,
             shift_distance=args.shift,
             display_q_min=args.q_min,
@@ -198,6 +210,7 @@ def main():
             pick_colors=pick_colors if args.plot_mode == "pick_auto" else None,   # <--- 加這個！
             save_label=args.save_label,
             peak_min=args.peak_min, peak_max=args.peak_max,
+            cluster_range=args.cluster_range,
             pick_qs=PICK_QS if args.plot_mode == "pick_auto" else None,
             baseq=args.baseq,
         ).run()

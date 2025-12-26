@@ -17,10 +17,12 @@ class Mode3Plotter:
     """
     交互式繪圖：提供 simple（簡易平移疊圖）和 cluster（導數分群疊圖）兩種模式。
     """
-    def __init__(self, target_dir, output_dir, interactive, interval=10, 
+    def __init__(self, target_dir, output_dir, interactive, interval=30, 
                 plot_mode='cluster',y_axis='log',x_axis='linear',derivative_order=2,
+                diff_step=0.1,
                 sort_peak=False,shift_distance=0.0,display_q_min=0.0, display_q_max=2.0,
                 cluster_colors=None,save_label=False,peak_min=0.5, peak_max=0.6,
+                cluster_range=False,
                 pick_qs=None,output_filename=None,pick_colors=None,baseq=None):
         self.target_dir = target_dir
         self.output_dir = output_dir
@@ -28,6 +30,7 @@ class Mode3Plotter:
         self.interval = int(interval)
         self.plot_mode = plot_mode  # 'simple' or 'cluster'
         self.derivative_order = derivative_order
+        self.diff_step = float(diff_step)
         self.sort_peak = sort_peak
         self.shift_distance = shift_distance
         self.num_clusters = 3
@@ -44,6 +47,7 @@ class Mode3Plotter:
         # 預設的峰值範圍
         self.peak_min = float(peak_min)
         self.peak_max = float(peak_max)
+        self.cluster_range = cluster_range
         # 載入並預處理資料（兩種模式共用）
         fp = os.path.join(self.target_dir, 'all_data.xlsx')
         df = pd.read_excel(fp).iloc[:-20]
@@ -446,8 +450,13 @@ class Mode3Plotter:
         
     # --- cluster 模式方法 ------------------------------------------
     def _compute_and_cluster(self):
-        qs = self.q_start
-        qe = self.q_end
+        if self.cluster_range:
+            qs = self.peak_min
+            qe = self.peak_max
+        else:
+            qs = self.q_start
+            qe = self.q_end
+        
         dq = float(self.tb_step.text)  # Diff Step 仍然保留
         self.sec_metrics.clear()
         for col in self.adjusted_y.columns:
@@ -460,9 +469,23 @@ class Mode3Plotter:
             deriv = np.gradient(yg, qg) if self.derivative_order==1 else np.gradient(np.gradient(yg,qg),qg)
             self.sec_metrics[col] = np.nanmax(np.abs(deriv))
         vals = list(self.sec_metrics.values())
-        bins = np.linspace(min(vals), max(vals), self.num_clusters+1); bins[-1]+=1e-8
-        newc = {k:min(max(np.digitize(v,bins)-1,0),self.num_clusters-1) 
-                for k,v in self.sec_metrics.items()}
+        
+        if not vals:
+            print("Warning: No metrics calculated.")
+            return
+
+        vmin, vmax = min(vals), max(vals)
+        print(f"Cluster Metrics (Range {qs:.3f}-{qe:.3f}): Min={vmin:.6f}, Max={vmax:.6f}")
+
+        if vmin == vmax:
+            # if all values identical, assigning to cluster 0
+            newc = {k: 0 for k in self.sec_metrics}
+        else:
+            bins = np.linspace(vmin, vmax, self.num_clusters+1)
+            bins[-1] += 1e-8
+            newc = {k:min(max(np.digitize(v,bins)-1,0),self.num_clusters-1) 
+                    for k,v in self.sec_metrics.items()}
+            
         self.df_res['Cluster'] = self.df_res['Column'].map(newc)
         # 顯示統計
         import pandas as pd
@@ -652,7 +675,7 @@ class Mode3Plotter:
 
         # Diff Step
         ax_st = plt.axes([0.35, 0.10, 0.05, 0.05])
-        self.tb_step = TextBox(ax_st, 'Diff Step', initial='0.1',label_pad=0.1)
+        self.tb_step = TextBox(ax_st, 'Diff Step', initial=str(self.diff_step),label_pad=0.1)
         self.tb_step.on_submit(lambda _: (self._compute_and_cluster(), self._draw_cluster(ax, int(self.tb_int.text))))
 
         # 顯示Q範圍
