@@ -3,13 +3,10 @@ import pandas as pd
 import numpy as np
 import matplotlib
 try:
-    import tkinter
+    import tornado
+    matplotlib.use('WebAgg')
 except ImportError:
-    try:
-        import tornado
-        matplotlib.use('WebAgg')
-    except ImportError:
-        matplotlib.use('Agg')
+    matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import TextBox, RadioButtons
 from matplotlib.cm import get_cmap
