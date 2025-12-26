@@ -1,0 +1,12 @@
+*
+!*/
+!*.py
+!requirements.txt
+!README.md
+!README copy.md
+!.gitignore
+!utils/**
+**/*.xlsx
+**/__pycache__
+**/peak
+**/sample
