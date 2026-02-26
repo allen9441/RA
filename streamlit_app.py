@@ -189,15 +189,20 @@ if st.button("開始執行"):
     if not os.path.exists(target_dir):
         st.error(f"找不到路徑: {target_dir}")
     else:
-        cmd = [sys.executable, "main.py"]
+        cmd = [sys.executable]
+        if getattr(sys, "frozen", False):
+            cmd.append("--cli-mode")
+        else:
+            cmd.append("main.py")
+
         cmd.extend(["--mode", selected_mode])
         cmd.extend(["--path", target_dir])
         cmd.extend(["--interval", interval])
         cmd.extend(["--output-dir", output_dir])
-        
+
         if output_name:
             cmd.extend(["--output-name", output_name])
-            
+
         if selected_mode in ["3", "all"]:
             cmd.extend(["--plot-mode", plot_mode])
             cmd.extend(["--y-axis", y_axis])
@@ -210,14 +215,14 @@ if st.button("開始執行"):
             cmd.extend(["--q-max", q_max])
             cmd.extend(["--peak-min", peak_min])
             cmd.extend(["--peak-max", peak_max])
-            
+
             if cluster_colors:
                 cmd.extend(["--cluster-colors", cluster_colors])
             if baseq:
                 cmd.extend(["--baseq", baseq])
             if pick_qs:
                 cmd.extend(["--pick-qs", pick_qs])
-            
+
             if interactive:
                 cmd.extend(["--interactive", "True"])
             if sort_peak:
@@ -228,7 +233,7 @@ if st.button("開始執行"):
                 cmd.append("--cluster-range")
 
         st.info(f"執行指令: {' '.join(cmd)}")
-        
+
         # Run process
         with st.spinner("執行中..."):
             process = subprocess.Popen(
@@ -238,13 +243,13 @@ if st.button("開始執行"):
                 text=True
             )
             stdout, stderr = process.communicate()
-            
+
             if stdout:
                 st.text_area("執行輸出 (Output)", stdout, height=300)
             if stderr:
                 st.error("錯誤輸出 (Error):")
                 st.text(stderr)
-            
+
             if process.returncode == 0:
                 st.success("執行成功！")
                 
