@@ -1,6 +1,7 @@
 *
 !*/
 !*.py
+!.github
 !requirements.txt
 !README.md
 !README copy.md

@@ -40,6 +40,7 @@ jobs:
       with:
         name: RA_app-linux
         path: dist/RA_app
+        retention-days: 1
 
     - name: Upload Windows Artifact
       if: matrix.os == 'windows-latest'
@@ -47,6 +48,7 @@ jobs:
       with:
         name: RA_app-windows
         path: dist/RA_app.exe
+        retention-days: 1
 
   publish:
     needs: build
