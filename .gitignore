@@ -6,7 +6,9 @@
 !README copy.md
 !.gitignore
 !utils/**
+!*.spec
 **/*.xlsx
 **/__pycache__
 **/peak
 **/sample
+dist
