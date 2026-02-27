@@ -18,9 +18,9 @@ jobs:
           PUBLIC_REPO: "allen9441/RA-releases"
           TAG_NAME: "nightly"
         run: |
-          gh release delete $TAG_NAME --repo $PUBLIC_REPO --cleanup-tag -y || true
-          gh release create $TAG_NAME \
-            --repo $PUBLIC_REPO \
+          gh release delete "$TAG_NAME" --repo "$PUBLIC_REPO" --cleanup-tag -y || true
+          gh release create "$TAG_NAME" \
+            --repo "$PUBLIC_REPO" \
             --title "Nightly Build $(date +'%Y-%m-%d')" \
             --notes "Automated build from private repository." \
             --prerelease
@@ -30,6 +30,7 @@ jobs:
     name: Build on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
@@ -59,13 +60,15 @@ jobs:
         pyinstaller RA_app.spec
 
     - name: Rename Asset
+      shell: bash 
       run: mv ${{ matrix.build_path }} ${{ matrix.asset_name }}
 
     - name: Upload to Public Release
       if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+      shell: bash
       env:
         GH_TOKEN: ${{ secrets.PUBLIC_REPO_TOKEN }}
         PUBLIC_REPO: "allen9441/RA-releases"
         TAG_NAME: "nightly"
       run: |
-        gh release upload $TAG_NAME ${{ matrix.asset_name }} --repo $PUBLIC_REPO --clobber
+        gh release upload "$TAG_NAME" "${{ matrix.asset_name }}" --repo "$PUBLIC_REPO" --clobber
