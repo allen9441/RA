@@ -5,30 +5,30 @@ import numpy as np
 
 class Mode2Merger:
     """
-    合併 hq_data.xlsx 與 lq_data.xlsx 並輸出 all_data.xlsx
+    合併 hq_data.csv 與 lq_data.csv 並輸出 all_data.csv
     """
     def __init__(self, target_dir, lq_start_x=0.0024729):
         self.target_dir = target_dir
         self.lq_start_x = lq_start_x
 
     def run(self):
-        hq_file_path = os.path.join(self.target_dir, 'hq_data.xlsx')
-        lq_file_path = os.path.join(self.target_dir, 'lq_data.xlsx')
-        output_file_path = os.path.join(self.target_dir, 'all_data.xlsx')
+        hq_file_path = os.path.join(self.target_dir, 'hq_data.csv')
+        lq_file_path = os.path.join(self.target_dir, 'lq_data.csv')
+        output_file_path = os.path.join(self.target_dir, 'all_data.csv')
         try:
         # 讀取資料
-            hq_data = pd.read_excel(hq_file_path, skiprows=10)
-            lq_data = pd.read_excel(lq_file_path)
+            hq_data = pd.read_csv(hq_file_path, skiprows=10)
+            lq_data = pd.read_csv(lq_file_path)
 
         # 確認資料不為空
             if hq_data.empty and not lq_data.empty:
-                lq_data.to_excel(output_file_path, index=False)
-                print(f"HQ 為空，直接複製 LQ 成為 all_data.xlsx")
+                lq_data.to_csv(output_file_path, index=False)
+                print(f"HQ 為空，直接複製 LQ 成為 all_data.csv")
                 return
             if lq_data.empty and not hq_data.empty:
                 # HQ 可能要保留原始 X；跳過前 10 行剛好拿到完整
-                hq_data.to_excel(output_file_path, index=False)
-                print(f"LQ 為空，直接複製 HQ 成為 all_data.xlsx")
+                hq_data.to_csv(output_file_path, index=False)
+                print(f"LQ 為空，直接複製 HQ 成為 all_data.csv")
                 return
             if hq_data.empty and lq_data.empty:
                 raise ValueError("HQ 和 LQ 都是空的，無法合併。")
@@ -69,20 +69,27 @@ class Mode2Merger:
 
             # 按列計算倍率並調整 hq_data
             adjusted_hq_data = hq_data.copy()
-            num = 1
-            for col in range(1, hq_data.shape[1]):  # 跳過第一列 (X 列)
-                lq_col = trimmed_lq_data.iloc[closest_index:closest_index + num_rows_hq, col]  # 當前列
-                hq_col = adjusted_hq_data.iloc[:hq_end_index, col]  # 當前列
-
-                # 計算該列的倍率
-                lq_avg = lq_col.abs().mean()
-                hq_avg = hq_col.abs().mean()
-                scaling_factor = lq_avg / hq_avg if hq_avg != 0 else 1
-                if num < 5:
-                    print(lq_avg,hq_avg,scaling_factor,num)
-                num += 1
-                # 調整 hq_data 的該列
-                adjusted_hq_data.iloc[:, col] *= scaling_factor
+            
+            # 使用 Pandas 向量化運算取代迴圈
+            # 取得數值資料區域 (跳過第一列的 X)
+            lq_subset = trimmed_lq_data.iloc[closest_index:closest_index + num_rows_hq, 1:]
+            hq_subset = adjusted_hq_data.iloc[:hq_end_index, 1:]
+            
+            # 計算平均值
+            # 加上 .values 避免因index不同而導致廣播失敗
+            lq_avg = lq_subset.abs().mean(axis=0).values
+            hq_avg = hq_subset.abs().mean(axis=0).values
+            
+            # 避免除以零，產生 scaling_factor 向量
+            # 使用 np.where，當 hq_avg == 0 時回傳 1
+            scaling_factors = np.where(hq_avg != 0, lq_avg / hq_avg, 1)
+            
+            # 印出前 4 筆觀察
+            for i in range(min(4, len(scaling_factors))):
+                print(lq_avg[i], hq_avg[i], scaling_factors[i], i+1)
+            
+            # 使用廣播機制更新數值 (跳過 X 列)
+            adjusted_hq_data.iloc[:, 1:] *= scaling_factors
 
             # 替換 X 列（第一列）
             adjusted_hq_data.iloc[:, 0] = hq_data.iloc[:, 0]
@@ -92,7 +99,7 @@ class Mode2Merger:
             trimmed_lq_data.iloc[closest_index:end_index, :] = adjusted_hq_data.values
 
             # 儲存結果
-            trimmed_lq_data.to_excel(output_file_path, index=False)
+            trimmed_lq_data.to_csv(output_file_path, index=False)
             print(f"合併成功，結果已保存到：{output_file_path}")
 
         except FileNotFoundError as e:

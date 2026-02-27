@@ -12,6 +12,70 @@ from matplotlib.widgets import TextBox, RadioButtons
 from matplotlib.cm import get_cmap
 from scipy.stats import mode
 from matplotlib.colors import to_rgb, to_hex
+import concurrent.futures
+
+# --- Helper Functions for ProcessPoolExecutor ---
+def _smooth(y, win=5):
+    """輕度平滑避免雜訊；win<=1 時不平滑"""
+    if win <= 1 or len(y) < win:
+        return y
+    k = np.ones(win) / win
+    return np.convolve(y, k, mode='same')
+
+def _find_start_of_rise(x_in, y_in, peak_idx):
+    if peak_idx <= 0:
+        return 0
+    y_s = _smooth(y_in, win=5)
+    dy = np.gradient(y_s, x_in)
+    start_idx = None
+    for k in range(0, peak_idx):
+        if dy[k] <= 0 and dy[k + 1] > 0:
+            start_idx = k + 1
+    if start_idx is None:
+        start_idx = int(np.nanargmin(y_s[:peak_idx + 1]))
+    return start_idx
+
+def _pick_auto_worker(col_name, x, y_col, q_center, pick_half_width, baseq_info):
+    """
+    baseq_info: (base_q_fixed, base_val_fixed) if baseq is set, else None
+    """
+    mask_win = (x >= q_center - pick_half_width) & (x <= q_center + pick_half_width)
+    x_in = x[mask_win]
+    y_in = y_col[mask_win]
+
+    if len(x_in) == 0:
+        return np.nan, np.nan, np.nan, np.nan, np.nan
+
+    y_s = _smooth(y_in, win=5)
+    peak_idx = int(np.nanargmax(y_s))
+    peak_q = x_in[peak_idx]
+    peak_val = y_in[peak_idx]
+
+    start_idx = _find_start_of_rise(x_in, y_in, peak_idx)
+    base_q = x_in[start_idx]
+    base_val = y_in[start_idx]
+    
+    if baseq_info is not None:
+        base_q, base_val = baseq_info
+
+    adjusted = peak_val - base_val
+    if not np.isnan(adjusted) and adjusted < 0:
+        adjusted = 0.0
+
+    return peak_q, peak_val, base_q, base_val, adjusted
+
+def _cluster_worker(col, xs, ys, qs, qe, dq, derivative_order):
+    if len(xs) < 3:
+        return col, 0
+    qg = np.arange(qs, qe + dq / 2, dq)
+    
+    if len(qg) < 3:
+        return col, 0
+
+    yg = np.interp(qg, xs, ys)
+    deriv = np.gradient(yg, qg) if derivative_order == 1 else np.gradient(np.gradient(yg, qg), qg)
+    return col, np.nanmax(np.abs(deriv))
+
 
 class Mode3Plotter:
     """
@@ -23,8 +87,10 @@ class Mode3Plotter:
                 sort_peak=False,shift_distance=0.0,display_q_min=0.0, display_q_max=2.0,
                 cluster_colors=None,save_label=False,peak_min=0.5, peak_max=0.6,
                 cluster_range=False,
-                pick_qs=None,output_filename=None,pick_colors=None,baseq=None):
+                pick_qs=None,output_filename=None,pick_colors=None,baseq=None,
+                max_workers=None):
         self.target_dir = target_dir
+        self.max_workers = max_workers
         self.output_dir = output_dir
         self.interactive = interactive
         self.interval = int(interval)
@@ -55,8 +121,8 @@ class Mode3Plotter:
         self.peak_max = float(peak_max)
         self.cluster_range = cluster_range
         # 載入並預處理資料（兩種模式共用）
-        fp = os.path.join(self.target_dir, 'all_data.xlsx')
-        df = pd.read_excel(fp).iloc[:-20]
+        fp = os.path.join(self.target_dir, 'all_data.csv')
+        df = pd.read_csv(fp).iloc[:-20]
         self.df_raw = df
         self.x = df.iloc[:,0].values
         orig = df.iloc[:,1:]
@@ -324,82 +390,40 @@ class Mode3Plotter:
         x = self.x
         ydata = self.adjusted_y
 
-    # ---- 小工具 ----
-        def _smooth(y, win=5):
-            """輕度平滑避免雜訊；win<=1 時不平滑"""
-            if win <= 1 or len(y) < win:
-                return y
-            k = np.ones(win) / win
-            return np.convolve(y, k, mode='same')
-
-        def _find_start_of_rise(x_in, y_in, peak_idx):
-            """
-            找起漲點：最高點 peak_idx 左側，最後一次由「不升(<=0) -> 上升(>0)」的切換點之後那一點。
-            若找不到，退回到 (<=peak) 區間內的全域最小值位置。
-            備註：拐點偵測以平滑後曲線進行，但 baseline 取原始 y_in 的值。
-            """
-            if peak_idx <= 0:
-                return 0
-            y_s = _smooth(y_in, win=5)
-            dy = np.gradient(y_s, x_in)
-            start_idx = None
-            # 從左到右找「最後一次」不升->上升
-            for k in range(0, peak_idx):
-                if dy[k] <= 0 and dy[k + 1] > 0:
-                    start_idx = k + 1
-            if start_idx is None:
-                # 後備：最高點左側(含)的全域最小值
-                start_idx = int(np.nanargmin(y_s[:peak_idx + 1]))
-            return start_idx
-
     # ---- 主流程：為每個 pick_q 建資料，然後畫圖/輸出 ----
+        # 預先計算 baseq 索引 (如果有的話)
+        base_idx = None
+        base_q_val = None
+        if baseq is not None:
+            base_idx = (np.abs(x - float(baseq))).argmin()
+            base_q_val = x[base_idx]
+
         for i, q_center in enumerate(pick_qs):
             # 每檔案的結果容器
             peak_q_list, peak_val_list = [], []
             base_q_list, base_val_list = [], []
             adjusted_list = []
 
-            # 1) 視窗內找最高點與起漲點；計算 Adjusted=Peak-Baseline(>=0)
+            # 準備 tasks
+            tasks = []
             for col in columns:
-                mask_win = (x >= q_center - pick_half_width) & (x <= q_center + pick_half_width)
-                x_in = x[mask_win]
-                y_in = ydata[col][mask_win].values
+                y_col = ydata[col].values
+                baseq_info = None
+                if base_idx is not None:
+                    baseq_info = (base_q_val, y_col[base_idx])
+                
+                tasks.append((col, x, y_col, q_center, pick_half_width, baseq_info))
 
-                if len(x_in) == 0:
-                    # 視窗內沒資料
-                    peak_q_list.append(np.nan)
-                    peak_val_list.append(np.nan)
-                    base_q_list.append(np.nan)
-                    base_val_list.append(np.nan)
-                    adjusted_list.append(np.nan)
-                    continue
-
-                # 找最高點（用平滑後位置，但取原值）
-                y_s = _smooth(y_in, win=5)
-                peak_idx = int(np.nanargmax(y_s))
-                peak_q = x_in[peak_idx]
-                peak_val = y_in[peak_idx]  # 取原始值
-
-                # 找起漲點
-                start_idx = _find_start_of_rise(x_in, y_in, peak_idx)
-                base_q = x_in[start_idx]
-                base_val = y_in[start_idx]  # 原始值
-                if baseq is not None:
-                    # 使用全域 x (原始資料 Q 值) 尋找最接近 baseq 的索引
-                    b_idx = (np.abs(x - float(baseq))).argmin()
-                    base_q = x[b_idx]
-                    base_val = ydata[col].values[b_idx]
-
-                # 計算 Adjusted，保證非負
-                adjusted = peak_val - base_val
-                if not np.isnan(adjusted) and adjusted < 0:
-                    adjusted = 0.0
-
-                peak_q_list.append(peak_q)
-                peak_val_list.append(peak_val)
-                base_q_list.append(base_q)
-                base_val_list.append(base_val)
-                adjusted_list.append(adjusted)
+            # 1) 視窗內找最高點與起漲點；使用 ProcessPoolExecutor
+            with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+                futures = [executor.submit(_pick_auto_worker, *t) for t in tasks]
+                for future in futures:
+                    pq, pv, bq, bv, adj = future.result()
+                    peak_q_list.append(pq)
+                    peak_val_list.append(pv)
+                    base_q_list.append(bq)
+                    base_val_list.append(bv)
+                    adjusted_list.append(adj)
 
             # 2) 畫圖（以 Adjusted 排序或原順序）
             #    顏色：沿用 self.pick_colors 設定，否則預設紫色
@@ -465,20 +489,25 @@ class Mode3Plotter:
         
         dq = float(self.tb_step.text)  # Diff Step 仍然保留
         self.sec_metrics.clear()
+        
+        mask = (self.x >= qs) & (self.x <= qe)
+        xs = self.x[mask]
+        
+        # 準備 tasks
+        tasks = []
         for col in self.adjusted_y.columns:
-            mask = (self.x>=qs)&(self.x<=qe)
-            xs = self.x[mask]; ys = self.adjusted_y[col][mask].values
-            if len(xs)<3:
-                self.sec_metrics[col]=0; continue
-            qg = np.arange(qs, qe+dq/2, dq)
-            
-            if len(qg) < 3:
-                self.sec_metrics[col] = 0
-                continue
+            ys = self.adjusted_y[col][mask].values
+            tasks.append((col, xs, ys, qs, qe, dq, self.derivative_order))
 
-            yg = np.interp(qg, xs, ys)
-            deriv = np.gradient(yg, qg) if self.derivative_order==1 else np.gradient(np.gradient(yg,qg),qg)
-            self.sec_metrics[col] = np.nanmax(np.abs(deriv))
+        # 使用多進程平行計算導數 (CPU-bound)
+        with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+            # starmap 在 Python 3.10+ 的 Executor 中未直接支援，用 submit loop
+            futures = [executor.submit(_cluster_worker, *t) for t in tasks]
+            
+            for future in futures:
+                col, metric = future.result()
+                self.sec_metrics[col] = metric
+
         vals = list(self.sec_metrics.values())
         
         if not vals:

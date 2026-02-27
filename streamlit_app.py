@@ -79,6 +79,8 @@ col1, col2 = st.columns(2)
 
 with col1:
     st.subheader("一般設定")
+    cpu_count = os.cpu_count() or 4
+    default_workers = min(4, cpu_count)
     interval = st.text_input(
         "Interval (間隔)", "30",
         help="每隔幾個檔案畫一條線，避免圖表過於擁擠。 | 預設值：30"
@@ -90,6 +92,11 @@ with col1:
     output_name = st.text_input(
         "Output Name (輸出檔名, 選填)", "",
         help="指定輸出的檔名 (不含副檔名)。 | 若留空，則自動使用資料夾名稱作為檔名。"
+    )
+    max_workers = st.slider(
+        "Max Workers (最大線程數)", 
+        min_value=1, max_value=cpu_count, value=default_workers, step=1,
+        help="控制多線程處理的併發數量。數值越高可能越快，但會佔用更多記憶體。"
     )
 
 with col2:
@@ -199,6 +206,7 @@ if st.button("開始執行"):
         cmd.extend(["--path", target_dir])
         cmd.extend(["--interval", interval])
         cmd.extend(["--output-dir", output_dir])
+        cmd.extend(["--max-workers", str(max_workers)])
 
         if output_name:
             cmd.extend(["--output-name", output_name])

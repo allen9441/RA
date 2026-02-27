@@ -1,65 +1,73 @@
 import os
 import shutil
+import concurrent.futures
 from natsort import natsorted
 import pandas as pd
 
 
+def _parse_dat_file(file_path):
+    q_vals = []
+    i_vals = []
+    with open(file_path, 'r') as f:
+        started = False
+        skip_next = False
+        for line in f:
+            if 'DISTRIBUTION=TRUE' in line.upper() and 'X' in line.upper() and 'Y' in line.upper():
+                started = False
+                skip_next = True
+                continue
+            if skip_next:
+                skip_next = False
+                started = True
+                continue
+            if 'Q' in line.upper() and 'I' in line.upper() and 'ERROR' in line.upper() :
+                started = True
+                continue
+            if started:
+                if ',' in line:
+                    parts = [p.strip() for p in line.strip().replace('，', ',').split(',')]
+                else:
+                    parts = line.split()
+                if len(parts) >= 2:
+                    try:
+                        q, i = float(parts[0]), float(parts[1])
+                    except ValueError:
+                        continue
+                    if q == 0:
+                        continue
+                    if q not in q_vals:
+                        q_vals.append(q)
+                    i_vals.append(i)
+    return q_vals, i_vals
+
+
 class Mode1Processor:
     """
-    分類 .dat 並匯出 hq_data.xlsx 與 lq_data.xlsx
+    分類 .dat 並匯出 hq_data.csv 與 lq_data.csv
     """
-    def __init__(self, target_dir):
+    def __init__(self, target_dir, max_workers=None):
         self.target_dir = target_dir
+        self.max_workers = max_workers
         self.q_values = []
-
-    def process_dat_file(self, file_path):
-        i_values = []
-        with open(file_path, 'r') as f:
-            started = False
-            skip_next = False  # 新增變數，用於跳過下一行
-            for line in f:
-                # 新增條件：遇到 Distribution 行
-                if 'DISTRIBUTION=TRUE' in line.upper() and 'X' in line.upper() and 'Y' in line.upper():
-                    started = False
-                    skip_next = True  # 跳過一行
-                    
-                    continue
-                if skip_next:
-                    skip_next = False
-                    started = True  # 下一行才開始
-                    continue
-                # 原本的條件：遇到 Q I ERROR 行
-                if 'Q' in line.upper() and 'I' in line.upper() and 'ERROR' in line.upper() :
-                    started = True
-                    continue
-                if started:
-                    if ',' in line:
-                        parts = [p.strip() for p in line.strip().replace('，', ',').split(',')]
-                    else:
-                        parts = line.split()
-                    if len(parts) >= 2:
-                        try:
-                            q, i = float(parts[0]), float(parts[1])
-                        except ValueError:
-                            continue
-                        if q == 0:
-                            continue
-                        if q not in self.q_values:
-                            self.q_values.append(q)
-                        i_values.append(i)
-        return i_values
 
     def export(self, folder, output_name):
         self.q_values = []
         data = {}
         max_len = 0
-        for fn in natsorted([f for f in os.listdir(folder) if f.endswith('.dat')]):
-            fp = os.path.join(folder, fn)
-            if os.path.getsize(fp) == 0:
-                print(f"空檔 {fp}，跳過。")
-                continue
-            iv = self.process_dat_file(fp)
+        
+        dat_files = natsorted([f for f in os.listdir(folder) if f.endswith('.dat')])
+        valid_files = [f for f in dat_files if os.path.getsize(os.path.join(folder, f)) > 0]
+        
+        # 使用 ProcessPoolExecutor 並行讀取檔案，避開 GIL
+        with concurrent.futures.ProcessPoolExecutor(max_workers=self.max_workers) as executor:
+            file_paths = [os.path.join(folder, fn) for fn in valid_files]
+            results = list(executor.map(_parse_dat_file, file_paths))
+            
+        for fn, (q_vals, iv) in zip(valid_files, results):
             data[fn] = iv
+            for q in q_vals:
+                if q not in self.q_values:
+                    self.q_values.append(q)
             max_len = max(max_len, len(iv))
 
         for k in data:
@@ -78,7 +86,7 @@ class Mode1Processor:
                 df = df.iloc[0:0]
 
         out = os.path.join(self.target_dir, output_name)
-        df.to_excel(out, index=False)
+        df.to_csv(out, index=False)
         print(f"數據已成功儲存到：{out}")
 
     def run(self):
@@ -97,6 +105,6 @@ class Mode1Processor:
                     if os.path.abspath(src) != os.path.abspath(dst):
                         shutil.copy2(src, dst)
 
-        # 匯出 Excel
-        self.export(hq, 'hq_data.xlsx')
-        self.export(lq, 'lq_data.xlsx')
+        # 匯出 CSV
+        self.export(hq, 'hq_data.csv')
+        self.export(lq, 'lq_data.csv')

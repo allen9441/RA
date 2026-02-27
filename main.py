@@ -4,6 +4,8 @@ from utils.mode2_merger import Mode2Merger
 from utils.mode3_plotter import Mode3Plotter
 import os
 def main():
+    cpu_count = os.cpu_count() or 4
+    default_workers = min(4, cpu_count)
     parser = argparse.ArgumentParser(description='一鍵處理 DAT->Excel、合併、繪圖')
     parser.add_argument('--mode', choices=['1','2','3','all'], default='3',
                         help='1=DAT到Excel,2=合併HQ/LQ,3=繪圖,all=全部')
@@ -117,6 +119,12 @@ def main():
         default=None,
         help='指定要 pick 的 Q 值，用逗號分隔 (例如 0.52,0.75,0.85)。若不指定則使用程式內建預設值。'
     )
+    parser.add_argument(
+        '--max-workers',
+        type=int,
+        default=default_workers,
+        help='指定多線程的最大 worker 數量，避免佔用過多記憶體。預設為 4 或 CPU 核心數的較小值。'
+    )
 
     args = parser.parse_args()
     CUSTOM_COLOR_MAP = {
@@ -193,7 +201,7 @@ def main():
         os.makedirs(args.output_dir)
 
     if args.mode in ('1', 'all'):
-        Mode1Processor(args.path).run()
+        Mode1Processor(args.path, max_workers=args.max_workers).run()
     if args.mode in ('2', 'all'):
         Mode2Merger(args.path).run()
     if args.mode in ('3', 'all'):
@@ -220,6 +228,7 @@ def main():
             cluster_range=args.cluster_range,
             pick_qs=PICK_QS if args.plot_mode == "pick_auto" else None,
             baseq=args.baseq,
+            max_workers=args.max_workers,
         ).run()
 if __name__ == '__main__':
     main()
