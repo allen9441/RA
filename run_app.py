@@ -1,5 +1,6 @@
 import os
 import sys
+import multiprocessing
 import streamlit.web.cli as stcli
 
 def resolve_path(path):
@@ -10,6 +11,8 @@ def resolve_path(path):
     return os.path.join(basedir, path)
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
+
     # 如果參數裡帶有 --cli-mode，就切換到執行原本的 main.py，而不是啟動 streamlit
     if len(sys.argv) > 1 and sys.argv[1] == "--cli-mode":
         import main
