@@ -212,11 +212,54 @@ class Mode3Plotter:
         # 存檔
         if self.output_filename:
             out2 = os.path.join(self.output_dir, f"{self.output_filename}.png")
+            out_html = os.path.join(self.output_dir, f"{self.output_filename}.html")
         else:
             out2 = os.path.join(self.output_dir, f"{folder_name}.png")
+            out_html = os.path.join(self.output_dir, f"{folder_name}.html")
         fig2.savefig(out2, bbox_inches='tight', dpi=600)
         plt.close(fig2)
         print("已儲存：", out2)
+
+        # 產出 Plotly 互動式網頁圖表
+        try:
+            import plotly.graph_objects as go
+            from matplotlib.colors import to_hex
+
+            fig_plotly = go.Figure()
+            # 複製 Lines
+            for line in ax.get_lines():
+                label = line.get_label()
+                if label.startswith('_'): continue
+                color = to_hex(line.get_color())
+                fig_plotly.add_trace(go.Scatter(
+                    x=line.get_xdata(), y=line.get_ydata(), mode='lines',
+                    name=label, line=dict(color=color)
+                ))
+            # 複製 Scatter
+            for col in ax.collections:
+                offsets = col.get_offsets()
+                if offsets.size == 0: continue
+                facecolor = col.get_facecolor()[0] if len(col.get_facecolor()) else (0,0,0,1)
+                color_hex = to_hex(facecolor)
+                label = col.get_label()
+                if label.startswith('_'): label = None
+                fig_plotly.add_trace(go.Scatter(
+                    x=offsets[:,0], y=offsets[:,1], mode='markers',
+                    name=label, marker=dict(color=color_hex, size=8)
+                ))
+
+            fig_plotly.update_layout(
+                title=ax.get_title(),
+                xaxis_title=ax.get_xlabel(),
+                yaxis_title=ax.get_ylabel(),
+                xaxis_type="log" if ax.get_xscale() == "log" else "linear",
+                yaxis_type="log" if ax.get_yscale() == "log" else "linear",
+                template="plotly_white"
+            )
+            fig_plotly.write_html(out_html)
+            print("已儲存互動式網頁圖表：", out_html)
+        except Exception as e:
+            print("產出 Plotly 圖表失敗:", e)
 
         # --- 是否開啟互動圖 ---
         if self.interactive:

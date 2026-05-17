@@ -2,14 +2,17 @@ import streamlit as st
 import subprocess
 import sys
 import os
+import zipfile
+import shutil
+import tempfile
 
 st.set_page_config(page_title="X-Ray Data Processor", layout="wide")
 
 st.title("X-Ray Data Processor GUI")
 
-# Initialize session state for browser
-if 'browser_cwd' not in st.session_state:
-    st.session_state.browser_cwd = os.getcwd()
+# Initialize RA_data directory
+RA_DATA_DIR = os.path.join(os.getcwd(), "RA_data")
+os.makedirs(RA_DATA_DIR, exist_ok=True)
 
 def get_subdirs(path):
     try:
@@ -18,41 +21,67 @@ def get_subdirs(path):
         return []
 
 # 1. Path Selection
-st.header("Step 1: 資料夾路徑")
+st.header("Step 1: 資料夾管理與選擇")
 
-# Browser UI
-st.markdown("### 資料夾瀏覽器")
-col_path, col_up = st.columns([0.85, 0.15])
+col_upload, col_select = st.columns(2)
 
-with col_path:
-    st.code(st.session_state.browser_cwd)
+with col_upload:
+    st.subheader("上傳新的資料夾壓縮檔 (ZIP)")
+    uploaded_file = st.file_uploader("上傳 ZIP 後將自動解壓縮至資料庫", type=["zip"])
+    
+    if uploaded_file is not None:
+        if st.button("上傳並解壓縮"):
+            with st.spinner("解壓縮中..."):
+                # Save uploaded zip temporarily
+                temp_zip = os.path.join(RA_DATA_DIR, "temp_uploaded.zip")
+                with open(temp_zip, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                
+                # Extract zip
+                extract_dir = os.path.join(RA_DATA_DIR, "temp_extract")
+                os.makedirs(extract_dir, exist_ok=True)
+                with zipfile.ZipFile(temp_zip, 'r') as zip_ref:
+                    zip_ref.extractall(extract_dir)
+                
+                # Check if there is a single top-level directory inside the zip
+                extracted_items = os.listdir(extract_dir)
+                if len(extracted_items) == 1 and os.path.isdir(os.path.join(extract_dir, extracted_items[0])):
+                    src_dir = os.path.join(extract_dir, extracted_items[0])
+                    folder_name = extracted_items[0]
+                else:
+                    src_dir = extract_dir
+                    # Use the uploaded file name as folder name (without .zip)
+                    folder_name = os.path.splitext(uploaded_file.name)[0]
+                
+                target_path = os.path.join(RA_DATA_DIR, folder_name)
+                
+                # Handle existing folder
+                if os.path.exists(target_path):
+                    shutil.rmtree(target_path)
+                    
+                shutil.move(src_dir, target_path)
+                
+                # Cleanup
+                if os.path.exists(extract_dir):
+                    shutil.rmtree(extract_dir)
+                os.remove(temp_zip)
+                
+                st.success(f"成功上傳並建立資料夾：{folder_name}")
+                st.rerun()
 
-with col_up:
-    if st.button("上一層"):
-        st.session_state.browser_cwd = os.path.dirname(st.session_state.browser_cwd)
-        st.rerun()
-
-subdirs = sorted(get_subdirs(st.session_state.browser_cwd))
-col_sel, col_go = st.columns([0.85, 0.15])
-
-with col_sel:
-    selected_subdir = st.selectbox("進入子資料夾", ["(選擇資料夾)"] + subdirs, label_visibility="collapsed")
-
-with col_go:
-    if st.button("進入") and selected_subdir != "(選擇資料夾)":
-        st.session_state.browser_cwd = os.path.join(st.session_state.browser_cwd, selected_subdir)
-        st.rerun()
-
-# Confirm selection
-if st.button("確認選擇此資料夾"):
-    st.session_state.selected_target = st.session_state.browser_cwd
-
-# Final Path Input (Editable)
-target_dir = st.text_input(
-    "目標資料夾路徑 (可手動修改)", 
-    value=st.session_state.get('selected_target', os.getcwd()),
-    help="輸入要處理的資料夾完整路徑。 | 可使用上方瀏覽器選擇，或直接貼上路徑。"
-)
+with col_select:
+    st.subheader("選擇要處理的資料夾")
+    subdirs = sorted(get_subdirs(RA_DATA_DIR))
+    
+    if not subdirs:
+        st.info("資料庫目前為空，請先上傳 ZIP 檔案。")
+        selected_target = None
+    else:
+        selected_folder = st.selectbox("選擇 RA_data 內的資料夾", subdirs)
+        selected_target = os.path.join(RA_DATA_DIR, selected_folder)
+        st.success(f"已選擇資料夾：{selected_folder}")
+        
+target_dir = selected_target if selected_target else ""
 
 st.markdown("---")
 
@@ -101,10 +130,6 @@ with col1:
 
 with col2:
     st.subheader("開關選項")
-    interactive = st.checkbox(
-        "Interactive (互動式視窗)", value=False, 
-        help="若勾選，程式會嘗試開啟獨立的 Matplotlib 視窗顯示圖表。"
-    )
     sort_peak = st.checkbox(
         "Sort Peak (依峰值排序)", value=False,
         help="是否根據指定 Q 範圍內的峰值強度，重新排序圖例順序。"
@@ -192,10 +217,17 @@ st.markdown("---")
 # 4. Run
 st.header("Step 4: 執行")
 
+if 'output_zip_path' not in st.session_state:
+    st.session_state.output_zip_path = None
+
 if st.button("開始執行"):
-    if not os.path.exists(target_dir):
+    if not target_dir or not os.path.exists(target_dir):
         st.error(f"找不到路徑: {target_dir}")
     else:
+        # Save output in target directory's output folder
+        real_output_dir = os.path.join(target_dir, output_dir)
+        os.makedirs(real_output_dir, exist_ok=True)
+        
         cmd = [sys.executable]
         if getattr(sys, "frozen", False):
             cmd.append("--cli-mode")
@@ -205,7 +237,7 @@ if st.button("開始執行"):
         cmd.extend(["--mode", selected_mode])
         cmd.extend(["--path", target_dir])
         cmd.extend(["--interval", interval])
-        cmd.extend(["--output-dir", output_dir])
+        cmd.extend(["--output-dir", real_output_dir])
         cmd.extend(["--max-workers", str(max_workers)])
 
         if output_name:
@@ -230,9 +262,6 @@ if st.button("開始執行"):
                 cmd.extend(["--baseq", baseq])
             if pick_qs:
                 cmd.extend(["--pick-qs", pick_qs])
-
-            if interactive:
-                cmd.extend(["--interactive", "True"])
             if sort_peak:
                 cmd.append("--sort-peak")
             if save_label:
@@ -240,7 +269,7 @@ if st.button("開始執行"):
             if cluster_range:
                 cmd.append("--cluster-range")
 
-        st.info(f"執行指令: {' '.join(cmd)}")
+        st.info("開始處理資料，這可能需要一點時間...")
 
         # Run process
         with st.spinner("執行中..."):
@@ -261,14 +290,64 @@ if st.button("開始執行"):
             if process.returncode == 0:
                 st.success("執行成功！")
                 
-                # Try to display result image if exists
+                # Copy CSV files to output directory for downloading if they exist
+                for csv_file in ["hq_data.csv", "lq_data.csv", "all_data.csv"]:
+                    src_csv = os.path.join(target_dir, csv_file)
+                    if os.path.exists(src_csv):
+                        try:
+                            shutil.copy(src_csv, os.path.join(real_output_dir, csv_file))
+                        except Exception as e:
+                            st.warning(f"無法複製 {csv_file}: {e}")
+                
+                # 先刪除 target_dir 中可能殘留的舊 zip，避免被一起打包
+                folder_name_for_zip = os.path.basename(os.path.normpath(target_dir))
+                output_zip_path = os.path.join(target_dir, f"{folder_name_for_zip}_results.zip")
+                if os.path.exists(output_zip_path):
+                    os.remove(output_zip_path)
+
+                # 也清理 real_output_dir 中可能殘留的 zip
+                for f in os.listdir(real_output_dir):
+                    if f.endswith('_results.zip'):
+                        try:
+                            os.remove(os.path.join(real_output_dir, f))
+                        except Exception:
+                            pass
+
+                # 先打包到暫存目錄，再移動到 target_dir，
+                # 確保 zip 檔案不在被打包的來源目錄中
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    tmp_zip_base = os.path.join(tmpdir, f"{folder_name_for_zip}_results")
+                    shutil.make_archive(tmp_zip_base, 'zip', real_output_dir)
+                    shutil.move(f"{tmp_zip_base}.zip", output_zip_path)
+
+                st.session_state.output_zip_path = output_zip_path
+                
+                # Try to display result image/html if exists
                 if output_name:
-                    img_path = os.path.join(output_dir, f"{output_name}.png")
+                    img_path = os.path.join(real_output_dir, f"{output_name}.png")
+                    html_path = os.path.join(real_output_dir, f"{output_name}.html")
                 else:
                     folder_name = os.path.basename(os.path.normpath(target_dir))
-                    img_path = os.path.join(output_dir, f"{folder_name}.png")
+                    img_path = os.path.join(real_output_dir, f"{folder_name}.png")
+                    html_path = os.path.join(real_output_dir, f"{folder_name}.html")
                 
-                if os.path.exists(img_path):
+                # If interactive html exists, show it via components.html, otherwise show image
+                if os.path.exists(html_path):
+                    import streamlit.components.v1 as components
+                    with open(html_path, 'r', encoding='utf-8') as f:
+                        html_data = f.read()
+                    st.markdown("### 互動式圖表")
+                    components.html(html_data, height=600, scrolling=True)
+                elif os.path.exists(img_path):
                     st.image(img_path, caption="Result Plot")
             else:
                 st.error("執行失敗")
+
+if st.session_state.get('output_zip_path') and os.path.exists(st.session_state.output_zip_path):
+    with open(st.session_state.output_zip_path, "rb") as fp:
+        btn = st.download_button(
+            label="下載處理結果 (ZIP)",
+            data=fp,
+            file_name=os.path.basename(st.session_state.output_zip_path),
+            mime="application/zip"
+        )
