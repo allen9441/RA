@@ -22,13 +22,13 @@ class Mode2Merger:
 
         # 確認資料不為空
             if hq_data.empty and not lq_data.empty:
-                lq_data.to_csv(output_file_path, index=False)
-                print(f"HQ 為空，直接複製 LQ 成為 all_data.csv")
+                self._preprocess_and_save(lq_data, output_file_path)
+                print(f"HQ 為空，處理並複製 LQ 成為 all_data.csv")
                 return
             if lq_data.empty and not hq_data.empty:
                 # HQ 可能要保留原始 X；跳過前 10 行剛好拿到完整
-                hq_data.to_csv(output_file_path, index=False)
-                print(f"LQ 為空，直接複製 HQ 成為 all_data.csv")
+                self._preprocess_and_save(hq_data, output_file_path)
+                print(f"LQ 為空，處理並複製 HQ 成為 all_data.csv")
                 return
             if hq_data.empty and lq_data.empty:
                 raise ValueError("HQ 和 LQ 都是空的，無法合併。")
@@ -99,8 +99,8 @@ class Mode2Merger:
             trimmed_lq_data.iloc[closest_index:end_index, :] = adjusted_hq_data.values
 
             # 儲存結果
-            trimmed_lq_data.to_csv(output_file_path, index=False)
-            print(f"合併成功，結果已保存到：{output_file_path}")
+            self._preprocess_and_save(trimmed_lq_data, output_file_path)
+            print(f"合併成功，處理後結果已保存到：{output_file_path}")
 
         except FileNotFoundError as e:
             print(f"錯誤：找不到檔案 - {e.filename}")
@@ -108,3 +108,21 @@ class Mode2Merger:
             print(f"錯誤：{e}")
         except Exception as e:
             print(f"發生未知錯誤：{e}")
+
+    def _preprocess_and_save(self, df, output_file_path):
+        """
+        對合併後的資料進行預處理：
+        1. 刪除最後 20 筆資料
+        2. 將每筆資料數值平移（加上最小值的絕對值）並過濾小於 1e-6 的值
+        這原本在 mode3 中進行，現在移到產出 csv 前。
+        """
+        if len(df) > 20:
+            df = df.iloc[:-20].copy()
+        else:
+            df = df.copy()
+            
+        orig = df.iloc[:, 1:]
+        adjusted_y = orig.add(orig.min().abs()).where(lambda d: d >= 1e-6)
+        df.iloc[:, 1:] = adjusted_y
+        
+        df.to_csv(output_file_path, index=False)

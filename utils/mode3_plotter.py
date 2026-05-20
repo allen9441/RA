@@ -120,13 +120,12 @@ class Mode3Plotter:
         self.peak_min = float(peak_min)
         self.peak_max = float(peak_max)
         self.cluster_range = cluster_range
-        # 載入並預處理資料（兩種模式共用）
+        # 載入資料（兩種模式共用，預處理已在 mode2 進行）
         fp = os.path.join(self.target_dir, 'all_data.csv')
-        df = pd.read_csv(fp).iloc[:-20]
+        df = pd.read_csv(fp)
         self.df_raw = df
         self.x = df.iloc[:,0].values
-        orig = df.iloc[:,1:]
-        self.adjusted_y = orig.add(orig.min().abs()).where(lambda d: d>=1e-6)
+        self.adjusted_y = df.iloc[:,1:]
         # 如果有指定 pick_qs，則只取這個 Q 範圍
         self.q_start = min(self.x)
         self.q_end   = max(self.x)
