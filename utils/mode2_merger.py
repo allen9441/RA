@@ -16,11 +16,18 @@ class Mode2Merger:
         lq_file_path = os.path.join(self.target_dir, 'lq_data.csv')
         output_file_path = os.path.join(self.target_dir, 'all_data.csv')
         try:
-        # 讀取資料
-            hq_data = pd.read_csv(hq_file_path, skiprows=10)
-            lq_data = pd.read_csv(lq_file_path)
+            # 讀取資料
+            try:
+                hq_data = pd.read_csv(hq_file_path, skiprows=10)
+            except FileNotFoundError:
+                hq_data = pd.DataFrame()
 
-        # 確認資料不為空
+            try:
+                lq_data = pd.read_csv(lq_file_path)
+            except FileNotFoundError:
+                lq_data = pd.DataFrame()
+
+            # 確認資料不為空
             if hq_data.empty and not lq_data.empty:
                 self._preprocess_and_save(lq_data, output_file_path)
                 print(f"HQ 為空，處理並複製 LQ 成為 all_data.csv")
