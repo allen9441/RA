@@ -82,7 +82,7 @@ class Mode1Processor:
             if len(df) > 5:
                 df = df.iloc[:-5].reset_index(drop=True)
             else:
-                # 保險起見，如果總行數小於等於5，就留空 DataFrame
+                # 保險起見，如果總行數不夠，就留空 DataFrame
                 df = df.iloc[0:0]
 
         out = os.path.join(self.target_dir, output_name)

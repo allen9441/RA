@@ -19,12 +19,12 @@ class Mode2Merger:
             # 讀取資料
             try:
                 hq_data = pd.read_csv(hq_file_path, skiprows=10)
-            except FileNotFoundError:
+            except (FileNotFoundError, pd.errors.EmptyDataError, ValueError):
                 hq_data = pd.DataFrame()
 
             try:
                 lq_data = pd.read_csv(lq_file_path)
-            except FileNotFoundError:
+            except (FileNotFoundError, pd.errors.EmptyDataError, ValueError):
                 lq_data = pd.DataFrame()
 
             # 確認資料不為空
@@ -128,8 +128,21 @@ class Mode2Merger:
         else:
             df = df.copy()
             
-        orig = df.iloc[:, 1:]
-        adjusted_y = orig.add(orig.min().abs()).where(lambda d: d >= 1e-6)
+        orig = df.iloc[:, 1:].copy()
+        
+        # 動態刪除最左邊往下掉的數據
+        # 在前 60 個點中尋找最大值，並將最大值之前的點設為 NaN
+        search_window = min(60, len(orig))
+        for i, col in enumerate(orig.columns):
+            # 取出前 search_window 筆資料，避免全部都是 NaN 的狀況
+            subset = orig[col].iloc[:search_window]
+            if not subset.isna().all():
+                max_iloc = int(subset.argmax())
+                if max_iloc > 0:
+                    orig.iloc[:max_iloc, i] = np.nan
+                    
+        # 負值視為雜訊；連同小於 1e-6 的值一併過濾成 NaN，避免被早期負尖峰平移整欄
+        adjusted_y = orig.where(lambda d: d >= 1e-6)
         df.iloc[:, 1:] = adjusted_y
         
         df.to_csv(output_file_path, index=False)

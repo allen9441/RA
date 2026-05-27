@@ -122,6 +122,15 @@ class Mode3Plotter:
         self.cluster_range = cluster_range
         # 載入資料（兩種模式共用，預處理已在 mode2 進行）
         fp = os.path.join(self.target_dir, 'all_data.csv')
+        if not os.path.exists(fp):
+            lq_fp = os.path.join(self.target_dir, 'lq_data.csv')
+            hq_fp = os.path.join(self.target_dir, 'hq_data.csv')
+            if os.path.exists(lq_fp):
+                print(f"Warning: all_data.csv not found, falling back to {lq_fp}")
+                fp = lq_fp
+            elif os.path.exists(hq_fp):
+                print(f"Warning: all_data.csv not found, falling back to {hq_fp}")
+                fp = hq_fp
         df = pd.read_csv(fp)
         self.df_raw = df
         self.x = df.iloc[:,0].values
