@@ -139,6 +139,23 @@ with col2:
         help="存檔圖片時是否包含圖例 (Legend)。若檔案過多建議關閉以避免遮擋。"
     )
 
+# Mode 2 specific
+if selected_mode in ["2", "all"]:
+    st.subheader("負值刪除範圍 (Mode 2)")
+    n1, n2 = st.columns(2)
+    with n1:
+        neg_q_min = st.text_input(
+            "刪除負值 Q Min", "",
+            help="只刪除此 Q 範圍內的負值。 | 留空代表從最小 Q 開始。"
+        )
+    with n2:
+        neg_q_max = st.text_input(
+            "刪除負值 Q Max", "",
+            help="只刪除此 Q 範圍內的負值。 | 留空代表到最大 Q 為止。"
+        )
+else:
+    neg_q_min = neg_q_max = ""
+
 # Mode 3 specific
 if selected_mode in ["3", "all"]:
     st.subheader("繪圖詳細設定 (Mode 3)")
@@ -242,6 +259,10 @@ if st.button("開始執行"):
 
         if output_name:
             cmd.extend(["--output-name", output_name])
+        if neg_q_min.strip():
+            cmd.extend(["--neg-q-min", neg_q_min.strip()])
+        if neg_q_max.strip():
+            cmd.extend(["--neg-q-max", neg_q_max.strip()])
 
         if selected_mode in ["3", "all"]:
             cmd.extend(["--plot-mode", plot_mode])

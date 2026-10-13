@@ -17,6 +17,10 @@ def main():
         default='cluster',
         help='繪圖模式：simple=僅平移疊圖, cluster=導數分群疊圖, pick_auto=自動pick Q強度 (新功能)'
     )
+    parser.add_argument('--neg-q-min', type=float, default=None,
+                        help='刪除負值的 Q 範圍下限 (預設不設限)')
+    parser.add_argument('--neg-q-max', type=float, default=None,
+                        help='刪除負值的 Q 範圍上限 (預設不設限)')
     parser.add_argument(
         '--y-axis',
         choices=['linear', 'log'],
@@ -203,7 +207,7 @@ def main():
     if args.mode in ('1', 'all'):
         Mode1Processor(args.path, max_workers=args.max_workers).run()
     if args.mode in ('2', 'all'):
-        Mode2Merger(args.path).run()
+        Mode2Merger(args.path, neg_q_min=args.neg_q_min, neg_q_max=args.neg_q_max).run()
     if args.mode in ('3', 'all'):
         Mode3Plotter(
             args.path,

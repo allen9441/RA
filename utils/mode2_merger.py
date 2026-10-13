@@ -7,9 +7,12 @@ class Mode2Merger:
     """
     合併 hq_data.csv 與 lq_data.csv 並輸出 all_data.csv
     """
-    def __init__(self, target_dir, lq_start_x=0.0024729):
+    def __init__(self, target_dir, lq_start_x=0.0024729, neg_q_min=None, neg_q_max=None):
         self.target_dir = target_dir
         self.lq_start_x = lq_start_x
+        # 僅在此 Q 範圍內刪除負值/過小值；None 代表該側不設限
+        self.neg_q_min = neg_q_min
+        self.neg_q_max = neg_q_max
 
     def run(self):
         hq_file_path = os.path.join(self.target_dir, 'hq_data.csv')
@@ -142,7 +145,15 @@ class Mode2Merger:
                     orig.iloc[:max_iloc, i] = np.nan
                     
         # 負值視為雜訊；連同小於 1e-6 的值一併過濾成 NaN，避免被早期負尖峰平移整欄
-        adjusted_y = orig.where(lambda d: d >= 1e-6)
+        # 只處理使用者指定的 Q 範圍，範圍外的數值保持不動
+        q = df.iloc[:, 0]
+        in_range = pd.Series(True, index=df.index)
+        if self.neg_q_min is not None:
+            in_range &= q >= self.neg_q_min
+        if self.neg_q_max is not None:
+            in_range &= q <= self.neg_q_max
+        bad = orig.lt(1e-6) & in_range.values[:, None]
+        adjusted_y = orig.mask(bad)
         df.iloc[:, 1:] = adjusted_y
         
         df.to_csv(output_file_path, index=False)
