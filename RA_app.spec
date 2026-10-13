@@ -16,7 +16,9 @@ hiddenimports = [
     'matplotlib.pyplot',
     'natsort',
     'openpyxl',
-    'scipy.stats'
+    'scipy.stats',
+    'plotly',
+    'plotly.graph_objects',
 ]
 tmp_ret = collect_all('streamlit')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

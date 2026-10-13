@@ -7,28 +7,38 @@ class Mode2Merger:
     """
     合併 hq_data.csv 與 lq_data.csv 並輸出 all_data.csv
     """
-    def __init__(self, target_dir, lq_start_x=0.0024729):
+    def __init__(self, target_dir, lq_start_x=0.0024729, neg_q_min=None, neg_q_max=None):
         self.target_dir = target_dir
         self.lq_start_x = lq_start_x
+        # 僅在此 Q 範圍內刪除負值/過小值；None 代表該側不設限
+        self.neg_q_min = neg_q_min
+        self.neg_q_max = neg_q_max
 
     def run(self):
         hq_file_path = os.path.join(self.target_dir, 'hq_data.csv')
         lq_file_path = os.path.join(self.target_dir, 'lq_data.csv')
         output_file_path = os.path.join(self.target_dir, 'all_data.csv')
         try:
-        # 讀取資料
-            hq_data = pd.read_csv(hq_file_path, skiprows=10)
-            lq_data = pd.read_csv(lq_file_path)
+            # 讀取資料
+            try:
+                hq_data = pd.read_csv(hq_file_path, skiprows=10)
+            except (FileNotFoundError, pd.errors.EmptyDataError, ValueError):
+                hq_data = pd.DataFrame()
 
-        # 確認資料不為空
+            try:
+                lq_data = pd.read_csv(lq_file_path)
+            except (FileNotFoundError, pd.errors.EmptyDataError, ValueError):
+                lq_data = pd.DataFrame()
+
+            # 確認資料不為空
             if hq_data.empty and not lq_data.empty:
-                lq_data.to_csv(output_file_path, index=False)
-                print(f"HQ 為空，直接複製 LQ 成為 all_data.csv")
+                self._preprocess_and_save(lq_data, output_file_path)
+                print(f"HQ 為空，處理並複製 LQ 成為 all_data.csv")
                 return
             if lq_data.empty and not hq_data.empty:
                 # HQ 可能要保留原始 X；跳過前 10 行剛好拿到完整
-                hq_data.to_csv(output_file_path, index=False)
-                print(f"LQ 為空，直接複製 HQ 成為 all_data.csv")
+                self._preprocess_and_save(hq_data, output_file_path)
+                print(f"LQ 為空，處理並複製 HQ 成為 all_data.csv")
                 return
             if hq_data.empty and lq_data.empty:
                 raise ValueError("HQ 和 LQ 都是空的，無法合併。")
@@ -99,8 +109,8 @@ class Mode2Merger:
             trimmed_lq_data.iloc[closest_index:end_index, :] = adjusted_hq_data.values
 
             # 儲存結果
-            trimmed_lq_data.to_csv(output_file_path, index=False)
-            print(f"合併成功，結果已保存到：{output_file_path}")
+            self._preprocess_and_save(trimmed_lq_data, output_file_path)
+            print(f"合併成功，處理後結果已保存到：{output_file_path}")
 
         except FileNotFoundError as e:
             print(f"錯誤：找不到檔案 - {e.filename}")
@@ -108,3 +118,42 @@ class Mode2Merger:
             print(f"錯誤：{e}")
         except Exception as e:
             print(f"發生未知錯誤：{e}")
+
+    def _preprocess_and_save(self, df, output_file_path):
+        """
+        對合併後的資料進行預處理：
+        1. 刪除最後 20 筆資料
+        2. 將每筆資料數值平移（加上最小值的絕對值）並過濾小於 1e-6 的值
+        這原本在 mode3 中進行，現在移到產出 csv 前。
+        """
+        if len(df) > 20:
+            df = df.iloc[:-20].copy()
+        else:
+            df = df.copy()
+            
+        orig = df.iloc[:, 1:].copy()
+        
+        # 動態刪除最左邊往下掉的數據
+        # 在前 60 個點中尋找最大值，並將最大值之前的點設為 NaN
+        search_window = min(60, len(orig))
+        for i, col in enumerate(orig.columns):
+            # 取出前 search_window 筆資料，避免全部都是 NaN 的狀況
+            subset = orig[col].iloc[:search_window]
+            if not subset.isna().all():
+                max_iloc = int(subset.argmax())
+                if max_iloc > 0:
+                    orig.iloc[:max_iloc, i] = np.nan
+                    
+        # 負值視為雜訊；連同小於 1e-6 的值一併過濾成 NaN，避免被早期負尖峰平移整欄
+        # 只處理使用者指定的 Q 範圍，範圍外的數值保持不動
+        q = df.iloc[:, 0]
+        in_range = pd.Series(True, index=df.index)
+        if self.neg_q_min is not None:
+            in_range &= q >= self.neg_q_min
+        if self.neg_q_max is not None:
+            in_range &= q <= self.neg_q_max
+        bad = orig.lt(1e-6) & in_range.values[:, None]
+        adjusted_y = orig.mask(bad)
+        df.iloc[:, 1:] = adjusted_y
+        
+        df.to_csv(output_file_path, index=False)
